@@ -13,7 +13,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getTranslations } from "@/lib/i18n";
 import { formatDate } from "@/lib/utils";
 import { publicEnv } from "@/lib/env";
-import { createTenantWithOwner, updateSubscriptionStatus } from "./actions";
+import { createTenantWithOwner, resendOwnerInvite, updateSubscriptionStatus } from "./actions";
 import type { PlatformStatsRow } from "@/lib/supabase/database.types";
 
 export const metadata = { title: "Platform" };
@@ -117,6 +117,17 @@ export default async function PlatformPage() {
       subscriptionStatus: (formData.get("status") as "active") ?? "trialing",
       statusNote: String(formData.get("statusNote") ?? ""),
     });
+  }
+
+  // Invite (or re-invite) the owner of a school that already exists. Issuing a
+  // new invitation revokes any outstanding one for the same address, so the
+  // newest link is always the only one that works.
+  async function inviteOwner(formData: FormData) {
+    "use server";
+    await resendOwnerInvite(
+      String(formData.get("tenantId") ?? ""),
+      String(formData.get("ownerEmail") ?? ""),
+    );
   }
 
   return (
@@ -262,6 +273,33 @@ export default async function PlatformPage() {
                     <Button type="submit" variant="secondary" size="sm">
                       {t.common.save}
                     </Button>
+                  </form>
+
+                  {/* Invite the owner of a school that already exists — the
+                      only route to an `owner` role, since school admins can
+                      invite staff and parents but never another owner. */}
+                  <form
+                    action={inviteOwner}
+                    className="flex flex-wrap items-end gap-2 border-t border-[var(--border)] pt-3"
+                  >
+                    <input type="hidden" name="tenantId" value={tenant.tenant_id} />
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">{t.platform.inviteOwner}</span>
+                      <Input
+                        name="ownerEmail"
+                        type="email"
+                        required
+                        placeholder="owner@example.com"
+                        aria-label={t.platform.ownerEmail}
+                        className="w-72"
+                      />
+                    </label>
+                    <Button type="submit" variant="outline" size="sm">
+                      {t.platform.inviteOwner}
+                    </Button>
+                    <p className="w-full text-xs text-[var(--muted-foreground)]">
+                      {t.platform.ownerEmailHelp}
+                    </p>
                   </form>
                 </CardContent>
               </Card>
