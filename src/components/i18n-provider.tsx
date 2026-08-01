@@ -2,9 +2,8 @@
 
 import * as React from "react";
 
-import { interpolate } from "@/lib/i18n";
 import type { Dictionary } from "@/lib/i18n/dictionaries/en";
-import type { Locale } from "@/lib/i18n/config";
+import { interpolate, type Locale } from "@/lib/i18n/config";
 
 type I18nValue = {
   locale: Locale;

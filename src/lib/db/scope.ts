@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
 import type { TenantContext } from "@/lib/auth/session";
 import { assertWritable } from "@/lib/auth/session";
@@ -60,7 +60,51 @@ type Insert<T extends TenantTable> = Tables[T]["Insert"];
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type UntypedDb = SupabaseClient<any, "public", any>;
+
+export type ScopedResult = {
+  data: any;
+  error: PostgrestError | null;
+  count: number | null;
+  status: number;
+  statusText: string;
+};
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * The chainable query surface the scope exposes.
+ *
+ * Declared by hand rather than reused from postgrest-js because that type is
+ * parameterised by the table being queried, which is exactly what the scope
+ * erases. Results come back as `data: any` and callers assert the Row type
+ * they asked for — the same trade PostgREST forces on any generic wrapper.
+ */
+export interface ScopedQuery extends PromiseLike<ScopedResult> {
+  select(
+    columns?: string,
+    options?: { count?: "exact" | "planned" | "estimated"; head?: boolean },
+  ): ScopedQuery;
+  eq(column: string, value: unknown): ScopedQuery;
+  neq(column: string, value: unknown): ScopedQuery;
+  gt(column: string, value: unknown): ScopedQuery;
+  gte(column: string, value: unknown): ScopedQuery;
+  lt(column: string, value: unknown): ScopedQuery;
+  lte(column: string, value: unknown): ScopedQuery;
+  like(column: string, pattern: string): ScopedQuery;
+  ilike(column: string, pattern: string): ScopedQuery;
+  is(column: string, value: unknown): ScopedQuery;
+  in(column: string, values: readonly unknown[]): ScopedQuery;
+  contains(column: string, value: unknown): ScopedQuery;
+  or(filters: string): ScopedQuery;
+  not(column: string, operator: string, value: unknown): ScopedQuery;
+  order(
+    column: string,
+    options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string },
+  ): ScopedQuery;
+  limit(count: number): ScopedQuery;
+  range(from: number, to: number): ScopedQuery;
+  single(): PromiseLike<ScopedResult>;
+  maybeSingle(): PromiseLike<ScopedResult>;
+}
 
 export class TenantScope {
   readonly ctx: TenantContext;
@@ -74,6 +118,11 @@ export class TenantScope {
     return this.ctx.supabase as unknown as UntypedDb;
   }
 
+  /** Narrows a postgrest builder to the scope's own query surface. */
+  private q(builder: unknown): ScopedQuery {
+    return builder as ScopedQuery;
+  }
+
   get tenantId(): string {
     return this.ctx.tenantId;
   }
@@ -83,25 +132,25 @@ export class TenantScope {
   }
 
   /** Read. Always filtered to the caller's tenant. */
-  select(table: TenantTable, columns = "*") {
-    return this.raw.from(table).select(columns).eq("tenant_id", this.ctx.tenantId);
+  select(table: TenantTable, columns = "*"): ScopedQuery {
+    return this.q(this.raw.from(table).select(columns)).eq("tenant_id", this.ctx.tenantId);
   }
 
   /** Read a single row by id, still tenant-filtered. */
-  selectById(table: TenantTable, id: string, columns = "*") {
-    return this.raw
-      .from(table)
-      .select(columns)
+  selectById(table: TenantTable, id: string, columns = "*"): PromiseLike<ScopedResult> {
+    return this.q(this.raw.from(table).select(columns))
       .eq("tenant_id", this.ctx.tenantId)
       .eq("id", id)
       .maybeSingle();
   }
 
   /** Read scoped to both the tenant and a specific academic year. */
-  selectForYear(table: YearScopedTable, academicYearId: string, columns = "*") {
-    return this.raw
-      .from(table)
-      .select(columns)
+  selectForYear(
+    table: YearScopedTable,
+    academicYearId: string,
+    columns = "*",
+  ): ScopedQuery {
+    return this.q(this.raw.from(table).select(columns))
       .eq("tenant_id", this.ctx.tenantId)
       .eq("academic_year_id", academicYearId);
   }
@@ -111,7 +160,7 @@ export class TenantScope {
    * A payload carrying a foreign tenant_id is treated as an attack, not a
    * mistake to be quietly corrected.
    */
-  insert<T extends TenantTable>(table: T, values: Insert<T> | Insert<T>[]) {
+  insert<T extends TenantTable>(table: T, values: Insert<T> | Insert<T>[]): ScopedQuery {
     assertWritable(this.ctx);
 
     const stamp = (value: Insert<T>): Insert<T> => {
@@ -123,7 +172,7 @@ export class TenantScope {
     };
 
     const payload = Array.isArray(values) ? values.map(stamp) : stamp(values);
-    return this.raw.from(table).insert(payload as never);
+    return this.q(this.raw.from(table).insert(payload as never));
   }
 
   /** Upsert, same tenant stamping as `insert`. */
@@ -131,7 +180,7 @@ export class TenantScope {
     table: T,
     values: Insert<T> | Insert<T>[],
     options?: { onConflict?: string },
-  ) {
+  ): ScopedQuery {
     assertWritable(this.ctx);
 
     const stamp = (value: Insert<T>): Insert<T> => {
@@ -143,14 +192,18 @@ export class TenantScope {
     };
 
     const payload = Array.isArray(values) ? values.map(stamp) : stamp(values);
-    return this.raw.from(table).upsert(payload as never, options);
+    return this.q(this.raw.from(table).upsert(payload as never, options));
   }
 
   /**
    * Update by id. Both the tenant filter and the id are applied, so an
    * attacker-supplied id from another school matches zero rows.
    */
-  update<T extends TenantTable>(table: T, id: string, values: Partial<Row<T>>) {
+  update<T extends TenantTable>(
+    table: T,
+    id: string,
+    values: Partial<Row<T>>,
+  ): ScopedQuery {
     assertWritable(this.ctx);
 
     const patch = { ...values } as Record<string, unknown>;
@@ -158,28 +211,27 @@ export class TenantScope {
     delete patch.tenant_id;
     delete patch.id;
 
-    return this.raw
-      .from(table)
-      .update(patch as never)
+    return this.q(this.raw.from(table).update(patch as never))
       .eq("tenant_id", this.ctx.tenantId)
       .eq("id", id);
   }
 
   /** Delete by id, tenant-filtered. Prefer soft-delete/status columns. */
-  delete(table: TenantTable, id: string) {
+  delete(table: TenantTable, id: string): ScopedQuery {
     assertWritable(this.ctx);
-    return this.raw.from(table).delete().eq("tenant_id", this.ctx.tenantId).eq("id", id);
+    return this.q(this.raw.from(table).delete())
+      .eq("tenant_id", this.ctx.tenantId)
+      .eq("id", id);
   }
 
   /** Row count for a table, tenant-filtered. */
   async count(
     table: TenantTable,
-    apply?: (q: ReturnType<TenantScope["select"]>) => ReturnType<TenantScope["select"]>,
+    apply?: (q: ScopedQuery) => ScopedQuery,
   ): Promise<number> {
-    let query = this.raw
-      .from(table)
-      .select("id", { count: "exact", head: true })
-      .eq("tenant_id", this.ctx.tenantId) as unknown as ReturnType<TenantScope["select"]>;
+    let query = this.q(
+      this.raw.from(table).select("id", { count: "exact", head: true }),
+    ).eq("tenant_id", this.ctx.tenantId);
 
     if (apply) query = apply(query);
 

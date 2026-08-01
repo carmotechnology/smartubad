@@ -19,3 +19,20 @@ export function isLocale(value: unknown): value is Locale {
 export function resolveLocale(value: unknown): Locale {
   return isLocale(value) ? value : DEFAULT_LOCALE;
 }
+
+/**
+ * Fill `{placeholders}` in a translated string.
+ *
+ *   interpolate(t.invite.joinAs, { school: "Little Stars", role: "a teacher" })
+ *
+ * Lives here rather than in `index.ts` because client components need it, and
+ * `index.ts` imports `next/headers`, which cannot cross into a client bundle.
+ */
+export function interpolate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? String(values[key]) : match,
+  );
+}

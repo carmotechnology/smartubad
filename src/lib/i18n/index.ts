@@ -34,20 +34,6 @@ export async function getTranslations(tenantLocale?: string | null): Promise<{
   return { locale, t: getDictionary(locale) };
 }
 
-/**
- * Fill `{placeholders}` in a translated string.
- *
- *   interpolate(t.invite.joinAs, { school: "Little Stars", role: "a teacher" })
- */
-export function interpolate(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
-    key in values ? String(values[key]) : match,
-  );
-}
-
 export type { Dictionary };
 export { en, so };
 export * from "./config";
