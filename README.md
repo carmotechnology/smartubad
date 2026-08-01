@@ -56,8 +56,11 @@ without rework.
 
 ## Getting started
 
-Requires **Node 20.9+**; Node 22 is recommended (the Supabase client warns on 20
-and Vercel should be pinned to 22).
+Requires **Node 22 or later** — this is a hard requirement, not a preference.
+`@supabase/supabase-js` 2.109 builds a realtime client eagerly and needs a
+native `WebSocket`, which Node 20 does not expose; on Node 20 the client throws
+`native WebSocket not found` the moment it is constructed. An `.nvmrc` is
+included, so `nvm use` picks the right version. Pin Vercel to Node 22 as well.
 
 ```bash
 git clone https://github.com/carmotechnology/smartubad.git

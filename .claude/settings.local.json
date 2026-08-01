@@ -3,7 +3,8 @@
     "allow": [
       "PowerShell(node --version)",
       "PowerShell(npm --version)",
-      "PowerShell(npm install --no-audit --no-fund 2>&1)"
+      "PowerShell(npm install --no-audit --no-fund 2>&1)",
+      "PowerShell(git push -u origin main 2>&1)"
     ]
   }
 }
