@@ -77,6 +77,16 @@ export type CreateInvitationResult = {
   /** Returned only so a dev environment can display it. Never persisted. */
   token: string;
   url: string;
+  /**
+   * Whether the invitation email actually left the building.
+   *
+   * False is a normal, recoverable state — an unverified sending domain, a
+   * provider outage, a bounced address. The invitation is still valid, so the
+   * UI surfaces the link and tells the operator to send it by hand rather
+   * than reporting success and leaving the invitee waiting for nothing.
+   */
+  emailDelivered: boolean;
+  emailError?: string;
 };
 
 export async function createInvitation(
@@ -143,7 +153,7 @@ export async function createInvitation(
 
   const schoolName = (tenant as { name: string } | null)?.name ?? publicEnv.appName;
 
-  await sendNotification({
+  const delivery = await sendNotification({
     to: { email, name: input.fullName },
     kind: "invite",
     subject: `You have been invited to ${schoolName}`,
@@ -164,6 +174,12 @@ export async function createInvitation(
       .join("\n"),
   });
 
+  const emailResult = delivery.find((result) => result.channel === "email");
+  // `skipped` is the console provider in development: nothing was sent, but
+  // the link was printed to the server log, which is the intended behaviour
+  // there rather than a failure to report.
+  const emailDelivered = Boolean(emailResult?.ok);
+
   await recordAudit({
     tenantId: input.tenantId,
     actorId: input.invitedBy,
@@ -171,10 +187,21 @@ export async function createInvitation(
     action: "invite.create",
     entityType: "invitation",
     entityId: invitation.id,
-    metadata: { email, role: input.role, expires_at: expiresAt },
+    metadata: {
+      email,
+      role: input.role,
+      expires_at: expiresAt,
+      email_delivered: emailDelivered,
+    },
   });
 
-  return { invitation, token, url };
+  return {
+    invitation,
+    token,
+    url,
+    emailDelivered,
+    emailError: emailResult?.ok ? undefined : emailResult?.error,
+  };
 }
 
 export function describeRole(role: InvitableRole): string {

@@ -144,11 +144,11 @@ export async function updateSubscriptionStatus(
 export async function resendOwnerInvite(
   tenantId: string,
   email: string,
-): Promise<ActionResult<{ inviteUrl: string }>> {
+): Promise<ActionResult<{ inviteUrl: string; emailDelivered: boolean; emailError?: string }>> {
   try {
     const { profile } = await requireSuperAdmin();
 
-    const { url } = await createInvitation({
+    const { url, emailDelivered, emailError } = await createInvitation({
       tenantId,
       email,
       role: "owner",
@@ -157,7 +157,7 @@ export async function resendOwnerInvite(
     });
 
     revalidatePath("/platform");
-    return { ok: true, data: { inviteUrl: url } };
+    return { ok: true, data: { inviteUrl: url, emailDelivered, emailError } };
   } catch (error) {
     return toActionError(error);
   }

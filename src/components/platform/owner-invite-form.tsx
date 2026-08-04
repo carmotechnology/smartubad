@@ -36,6 +36,7 @@ export function OwnerInviteForm({
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
   const [inviteUrl, setInviteUrl] = React.useState<string | null>(null);
+  const [delivered, setDelivered] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
 
@@ -59,6 +60,7 @@ export function OwnerInviteForm({
     }
 
     setInviteUrl(result.data?.inviteUrl ?? null);
+    setDelivered(result.data?.emailDelivered ?? false);
     (event.target as HTMLFormElement).reset();
     router.refresh();
   }
@@ -88,11 +90,20 @@ export function OwnerInviteForm({
       {error ? <Alert role="alert" tone="danger" title={error} /> : null}
 
       {inviteUrl ? (
-        <Alert tone="success" title="Invitation created">
+        <Alert
+          tone={delivered ? "success" : "warning"}
+          title={
+            delivered
+              ? "Invitation created and emailed"
+              : "Invitation created — but the email did not send"
+          }
+        >
           <p className="mb-2">
-            Send this link to the owner if the email does not arrive. It expires
-            in 72 hours, can be used once, and only works for the address it was
-            issued to.
+            {delivered
+              ? "The owner should receive it shortly. This link is a backup."
+              : "Send this link to the owner yourself. The invitation is valid; only the delivery failed."}{" "}
+            It expires in 72 hours, can be used once, and only works for the
+            address it was issued to.
           </p>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-[var(--muted)] px-2 py-1 text-xs">
